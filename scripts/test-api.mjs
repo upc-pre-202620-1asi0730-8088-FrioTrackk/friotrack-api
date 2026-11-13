@@ -17,7 +17,7 @@ const url = host + '/api';
 const dataFile = path.resolve('tmp/api-test-'+randomBytes(6).toString('hex')+'.json');
 await mkdir('tmp',{recursive:true});
 let server;
- server=spawn('dotnet',[path.resolve('output/api-publish/FrioTrack.Api.dll'),'--urls',host],{cwd:path.resolve('output/api-publish'),env:{...process.env,FRIOTRACK_DATA_FILE:dataFile,FRIOTRACK_COORDINATOR_PASSWORD:coordinatorPassword,FRIOTRACK_CLIENT_PASSWORD:clientPassword},stdio:['ignore','ignore','pipe'],windowsHide:true});
+ server=spawn('dotnet',[path.resolve('output/api-publish/FrioTrack.Api.dll'),'--urls',host],{cwd:path.resolve('output/api-publish'),env:{...process.env,FRIOTRACK_PERSISTENCE:'json',FRIOTRACK_DATA_FILE:dataFile,FRIOTRACK_COORDINATOR_PASSWORD:coordinatorPassword,FRIOTRACK_CLIENT_PASSWORD:clientPassword},stdio:['ignore','ignore','pipe'],windowsHide:true});
 let stderr='';server?.stderr.on('data',d=>stderr+=d);
 let passed=0;
 async function call(route, body, token) {
