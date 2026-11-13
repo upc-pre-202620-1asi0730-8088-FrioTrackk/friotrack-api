@@ -12,6 +12,23 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: friotrack_ci
+          POSTGRES_PASSWORD: isolated-ci-password
+          POSTGRES_DB: friotrack_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U friotrack_ci -d friotrack_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FRIOTRACK_TEST_DB: Host=127.0.0.1;Port=5432;Username=friotrack_ci;Password=isolated-ci-password;Database=friotrack_ci
+      FRIOTRACK_DB: Host=127.0.0.1;Port=5432;Username=friotrack_ci;Password=isolated-ci-password;Database=friotrack_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,5 +37,19 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet publish FrioTrack.Api.csproj -c Release -o output/api-publish --no-self-contained
-      - run: node scripts/test-api.mjs
+      - name: Restore and test domain rules
+        run: dotnet test tests/FrioTrack.Api.Tests/FrioTrack.Api.Tests.csproj -c Release
+      - name: Check the EF Core migration snapshot
+        run: |
+          dotnet tool install dotnet-ef --version 10.0.13 --tool-path "$RUNNER_TEMP/ef-tools"
+          "$RUNNER_TEMP/ef-tools/dotnet-ef" migrations has-pending-model-changes --project FrioTrack.Api.csproj
+      - name: Publish the REST API
+        run: dotnet publish FrioTrack.Api.csproj -c Release -o output/api-publish --no-self-contained
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Test real PostgreSQL persistence and REST authorization
+        run: node scripts/test-postgres.mjs
+      - name: Test the explicit historical JSON adapter
+        run: node scripts/test-api.mjs

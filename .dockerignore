@@ -1,0 +1,17 @@
+.git
+.github
+**/bin
+**/obj
+output
+tmp
+data
+.azure-tools
+.env
+.env.*
+!.env.example
+**/*.log
+**/*.pfx
+**/*.pem
+**/*.key
+appsettings.*.local.json
+accounts.json
