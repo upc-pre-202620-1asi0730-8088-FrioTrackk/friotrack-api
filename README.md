@@ -1,6 +1,6 @@
 # FríoTrack API
 
-Canonical Web Services source for FríoTrack AV2. ASP.NET Core 10, Entity Framework Core and PostgreSQL implement the refrigerated shipment workflow. The API defaults to relational persistence; the historical TB1 JSON adapter remains available only through an explicit configuration choice. No existing Azure service or private JSON file is changed by publishing this source.
+Canonical Web Services source for FríoTrack AV2. ASP.NET Core 10, Entity Framework Core and PostgreSQL implement the refrigerated shipment workflow. The API defaults to relational persistence; the historical TB1 JSON adapter remains available only through an explicit configuration choice.
 
 `seed.json` contains fictional demonstration accounts, shipments, readings and coordinates. Manually recorded readings retain demonstration provenance; this release does not claim physical sensor ingestion, email delivery or verified cold-chain conditions.
 
@@ -10,7 +10,7 @@ The AV2 API was published on 14 November 2026 to the existing Azure App Service,
 
 The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Their credentials and the private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
 
-The [public browser verification](docs/public-interview-verification.json) records 14 technical checks with demonstration data. Participant interviews, team acceptance, email password recovery and the monthly PDF report are separate from this verification.
+The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. Email password recovery and the monthly PDF report are outside the scope of this version.
 
 ## Run locally
 
@@ -43,7 +43,7 @@ For Docker, copy [.env.example](.env.example) to a private `.env`, supply the re
 docker compose up --build
 ```
 
-The default Compose URL is `http://localhost:5180/swagger`. PostgreSQL data is stored in a named volume; seeding never overwrites an existing organization. Review migrations and take a backup before updating any non-disposable database. Container configuration is reproducible setup, not evidence that a cloud deployment occurred.
+The default Compose URL is `http://localhost:5180/swagger`. PostgreSQL data is stored in a named volume; seeding never overwrites an existing organization. Review migrations and take a backup before updating any non-disposable database. The Compose configuration describes the local development services.
 
 ## REST and authentication contract
 
@@ -80,7 +80,7 @@ Mutation responses preserve `{profile,state,result}` for the frontend gateway. A
 | `Monitoring/Domain` | Monitoring root, local range snapshot, readings and positions. |
 | `Fleet/Domain` | Vehicle, driver, sensor and allocation roots. Sensor may exist unassigned. |
 | `AlertsReporting/Domain` | Alert attention/recovery, notifications, incidents and report snapshots. |
-| `Iam/Domain` | Organization/account roots, hashed sessions and the planned reset-token structure. |
+| `Iam/Domain` | Organization/account roots, hashed sessions and the reset-token schema. |
 | `Shared/Domain` | Domain exceptions, invariant helpers and aggregate repository contracts. |
 | `Shared/Application/RelationalWorkspaceService.cs` | Scoped transactional use cases, authorization and compatibility projections. |
 | `Shared/Infrastructure/FrioTrackDbContext.cs` | Normalized EF model, keys, constraints, indexes and repository implementation. |
@@ -110,4 +110,4 @@ Domain tests cover invalid intervals, reservation preconditions, lifecycle/versi
 
 ## Migration and deployment boundary
 
-The historical JSON store is not automatically imported or overwritten by application startup. The 14 November 2026 deployment used a reviewed transactional import and retained a private backup before switching to PostgreSQL. The new source defaults to PostgreSQL, so **do not redeploy it over the old JSON-backed Azure service without configuring the new database and confirming the migration plan**. Source releases and local receipts do not certify an Azure deployment or team acceptance. See [contribution workflow](CONTRIBUTING.md) for branches and release conventions.
+The historical JSON store is not automatically imported or overwritten by application startup. The 14 November 2026 deployment used a reviewed transactional import and retained a private backup before switching to PostgreSQL. The published service uses PostgreSQL with automatic migrations and seeding disabled. Its source revision, package hash and Kudu deployment are recorded in the [deployment receipt](docs/redeployment-api.json). See [contribution workflow](CONTRIBUTING.md) for branches and release conventions.

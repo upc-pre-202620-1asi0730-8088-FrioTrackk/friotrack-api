@@ -16,4 +16,4 @@ Do not commit private stores, tokens, generated account files, deployment creden
 
 Cut `release/<version>` from `develop`, prepare accurate release notes and integrate the reviewed release into `main`. Tag the exact reviewed commit and publish its release with the verified scope and known limitations. Return the integration to `develop`. Emergency `hotfix/<purpose>` branches start from `main` and are merged into both `main` and `develop`.
 
-During the transition from `friotrack-frontend/api`, keep the C# files and demonstration seed consistent in both locations. The independent API repository is the canonical source. Source publication and service deployment are separate actions; release notes should state which revision was actually deployed.
+The independent API repository is the canonical source. The SPA consumes its REST contract through the frontend gateway. Source release tags and deployment receipts identify the corresponding code and service revisions.
