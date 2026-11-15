@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-11-15T00:30:31.424Z",
+  "scope": "Verificación técnica del entorno público con datos ficticios; no sustituye entrevistas reales.",
+  "checks": [
+    "Landing pública enlazada a los dos perfiles de la aplicación pública en español",
+    "Inicio de sesión y panel: coordinator",
+    "Detalle, condiciones e historial del envío con alerta: coordinator",
+    "Formulario de envío y diálogo de acción correctiva accesibles al coordinador",
+    "Programación completa desde el formulario, persistencia y rechazo de reserva solapada",
+    "Consulta de notificaciones del destinatario: coordinator",
+    "Descarga real del reporte JSON persistido: coordinator",
+    "Cierre de sesión: coordinator",
+    "Inicio de sesión y panel: cargo-client",
+    "Detalle, condiciones e historial del envío con alerta: cargo-client",
+    "El cliente consulta alertas sin acciones exclusivas del coordinador",
+    "Consulta de notificaciones del destinatario: cargo-client",
+    "Descarga real del reporte JSON persistido: cargo-client",
+    "Cierre de sesión: cargo-client"
+  ],
+  "pageErrors": []
+}

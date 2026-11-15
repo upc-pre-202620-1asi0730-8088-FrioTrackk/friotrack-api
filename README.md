@@ -4,6 +4,14 @@ Canonical Web Services source for FríoTrack AV2. ASP.NET Core 10, Entity Framew
 
 `seed.json` contains fictional demonstration accounts, shipments, readings and coordinates. Manually recorded readings retain demonstration provenance; this release does not claim physical sensor ingestion, email delivery or verified cold-chain conditions.
 
+## Published AV2 service
+
+The AV2 API was published on 14 November 2026 to the existing Azure App Service, using PostgreSQL 17 on Neon. [Health](https://friotrack-api-bce6db1b.azurewebsites.net/api/health), [Swagger UI](https://friotrack-api-bce6db1b.azurewebsites.net/swagger/index.html) and the [OpenAPI document](https://friotrack-api-bce6db1b.azurewebsites.net/swagger/v1/swagger.json) are public. The [deployment receipt](docs/redeployment-api.json) identifies source revision `e9aca8e`, the package hash and Kudu deployment.
+
+The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Their credentials and the private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
+
+The [public browser verification](docs/public-interview-verification.json) records 14 technical checks with demonstration data. Participant interviews, team acceptance, email password recovery and the monthly PDF report are separate from this verification.
+
 ## Run locally
 
 Requires the .NET 10 SDK and PostgreSQL 17 (or the Docker Compose setup below). Supply the connection string privately through `FRIOTRACK_DB`; never commit its password. Set `FRIOTRACK_MIGRATE=true` when explicitly applying the included initial migration. For an empty demonstration database, also set `FRIOTRACK_SEED=true` and the two initial passwords before starting:
@@ -102,4 +110,4 @@ Domain tests cover invalid intervals, reservation preconditions, lifecycle/versi
 
 ## Migration and deployment boundary
 
-The old private JSON database is neither automatically imported nor replaced. A production move requires a confirmed PostgreSQL destination, a reviewed migration and an explicit data/account migration decision. The new source defaults to PostgreSQL, so **do not redeploy it over the old JSON-backed Azure service without configuring the new database and confirming the migration plan**. Source releases and local receipts do not certify an Azure deployment or team acceptance. See [contribution workflow](CONTRIBUTING.md) for branches and release conventions.
+The historical JSON store is not automatically imported or overwritten by application startup. The 14 November 2026 deployment used a reviewed transactional import and retained a private backup before switching to PostgreSQL. The new source defaults to PostgreSQL, so **do not redeploy it over the old JSON-backed Azure service without configuring the new database and confirming the migration plan**. Source releases and local receipts do not certify an Azure deployment or team acceptance. See [contribution workflow](CONTRIBUTING.md) for branches and release conventions.
