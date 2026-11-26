@@ -9,6 +9,7 @@ using FrioTrack.Api.Iam.Infrastructure;
 using FrioTrack.Api.Shared.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Scalar.AspNetCore;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,7 +39,7 @@ if (persistenceMode == "json") {
     builder.Services.AddScoped<RelationalWorkspaceService>();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options => {
-        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack AV2 REST API", Version="0.2.0", Description="PostgreSQL/EF Core service for refrigerated shipment operations. Seed records and manually recorded telemetry are demonstration data. Sign in through /api/auth/login, then enter the opaque token through Authorize. Messages default to English; Accept-Language: es enables Spanish." });
+        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack REST API", Version="0.2.1", Description="Servicio de gestión de envíos refrigerados, flota, alertas e historial. Las lecturas y coordenadas de demostración no representan sensores físicos. Inicie sesión en /api/auth/login y utilice el token opaco recibido en la autenticación Bearer. Accept-Language: es permite consultar los mensajes en español." });
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type=SecuritySchemeType.Http, Scheme="bearer", BearerFormat="Opaque session token", Description="Use the token returned by login. This is not a JWT." });
         options.AddSecurityRequirement(document => new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("Bearer",document)] = [] });
     });
@@ -50,6 +51,10 @@ app.UseMiddleware<ApiErrorMiddleware>();
 if (persistenceMode == "json") app.MapWorkspaceEndpoints();
 else {
     app.UseSwagger();
+    app.MapScalarApiReference(options => options
+        .WithTitle("FríoTrack API — Documentación")
+        .WithOpenApiRoutePattern("/swagger/{documentName}/swagger.json")
+        .DisableAgent());
     app.UseSwaggerUI(options => { options.SwaggerEndpoint("/swagger/v1/swagger.json", "FríoTrack AV2 v1"); options.DocumentTitle="FríoTrack API documentation"; });
     app.MapAv2Endpoints();
     await DatabaseInitializer.Initialize(app);

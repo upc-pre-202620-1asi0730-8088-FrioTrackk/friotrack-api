@@ -38,7 +38,7 @@ async function start(){
 }
 async function stop(){if(server&&server.exitCode===null){server.kill();await Promise.race([new Promise(r=>server.once('exit',r)),new Promise(r=>setTimeout(r,3000))]);}}
 async function call(route,{method='GET',body,token,language}={}){
- const response=await fetch(base+(route.startsWith('/swagger/')?'':'/api')+route,{method,signal:AbortSignal.timeout(15000),headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...(language?{'Accept-Language':language}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ const response=await fetch(base+(route.startsWith('/swagger/')||route.startsWith('/scalar')?'':'/api')+route,{method,signal:AbortSignal.timeout(15000),headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...(language?{'Accept-Language':language}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
  const content=await response.text();let data=null;try{data=JSON.parse(content);}catch{}
  return {status:response.status,data,headers:response.headers,content};
 }
@@ -52,6 +52,7 @@ try {
  check('EF migrations create the relational schema',()=>{assert.ok(Number(sql('SELECT count(*) FROM "__EFMigrationsHistory";'))>=1);assert.ok(Number(sql("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '__EFMigrationsHistory';"))>=18);});
  const spec=await call('/swagger/v1/swagger.json');check('OpenAPI exposes authenticated domain REST operations',()=>{assert.equal(spec.status,200);for(const endpoint of ['/api/shipments','/api/vehicles','/api/drivers','/api/sensors'])assert.ok(spec.data.paths[endpoint]);});
  const ui=await call('/swagger/index.html');check('Swagger UI is available',()=>assert.equal(ui.status,200));
+ const scalar=await call('/scalar/v1');check('Scalar renders the published OpenAPI reference without a preset token',()=>{assert.equal(scalar.status,200);assert.match(scalar.content,/swagger\/v1\/swagger\.json/);assert.match(scalar.content,/FríoTrack API/);assert.doesNotMatch(scalar.content,/Bearer [A-Za-z0-9_-]{20,}/);});
  const guest=await call('/workspace');check('Workspace rejects anonymous access',()=>assert.equal(guest.status,401));
  const bad=await call('/auth/login',{method:'POST',body:{email:'coordinador@friotrack.app',password:'wrong'},language:'es-419'});check('Invalid credentials rejected with a localized message',()=>{assert.equal(bad.status,401);assert.equal(bad.data.code,'invalidCredentials');assert.ok(bad.data.message);});
  const owner=await call('/auth/login',{method:'POST',body:{email:'coordinador@friotrack.app',password}});
