@@ -6,9 +6,9 @@ Canonical Web Services source for FríoTrack AV2. ASP.NET Core 10, Entity Framew
 
 ## Published AV2 service
 
-The AV2 API was published on 14 November 2026 to the existing Azure App Service, using PostgreSQL 17 on Neon. [Health](https://friotrack-api-bce6db1b.azurewebsites.net/api/health), [Swagger UI](https://friotrack-api-bce6db1b.azurewebsites.net/swagger/index.html) and the [OpenAPI document](https://friotrack-api-bce6db1b.azurewebsites.net/swagger/v1/swagger.json) are public. The [deployment receipt](docs/redeployment-api.json) identifies source revision `e9aca8e`, the package hash and Kudu deployment.
+The AV2 API was published on 14 November 2026 to the existing Azure App Service, using PostgreSQL 17 on Neon. [Health](https://friotrack-api-bce6db1b.azurewebsites.net/api/health), [Scalar](https://friotrack-api-bce6db1b.azurewebsites.net/scalar/v1) and the [OpenAPI document](https://friotrack-api-bce6db1b.azurewebsites.net/swagger/v1/swagger.json) are public. The [deployment receipt](docs/redeployment-api.json) identifies source revision `e9aca8e`, the package hash and Kudu deployment.
 
-The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Their credentials and the private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
+The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Only isolated demonstration account credentials are included in the report annex for academic review. Infrastructure credentials and private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
 
 The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. Email password recovery and the monthly PDF report are outside the scope of this version.
 
@@ -21,7 +21,7 @@ dotnet restore
 dotnet run --project FrioTrack.Api.csproj --urls http://localhost:5080
 ```
 
-The API base URL is `http://localhost:5080/api`; interactive Swagger documentation is at `http://localhost:5080/swagger`, with the OpenAPI document at `/swagger/v1/swagger.json`.
+The API base URL is `http://localhost:5080/api`; interactive Scalar documentation is at `http://localhost:5080/scalar/v1`, with the OpenAPI document at `/swagger/v1/swagger.json`.
 
 | Configuration | Purpose |
 | --- | --- |
@@ -43,11 +43,11 @@ For Docker, copy [.env.example](.env.example) to a private `.env`, supply the re
 docker compose up --build
 ```
 
-The default Compose URL is `http://localhost:5180/swagger`. PostgreSQL data is stored in a named volume; seeding never overwrites an existing organization. Review migrations and take a backup before updating any non-disposable database. The Compose configuration describes the local development services.
+The default Compose URL is `http://localhost:5180/scalar/v1`. PostgreSQL data is stored in a named volume; seeding never overwrites an existing organization. Review migrations and take a backup before updating any non-disposable database. The Compose configuration describes the local development services.
 
 ## REST and authentication contract
 
-Swagger documents the typed request schemas, response statuses and field formats. Sign in using `/api/auth/login`, then use **Authorize** with the returned opaque session token. Tokens are not JWT: only their SHA-256 digests are persisted. Passwords use salted PBKDF2-SHA256 with 210,000 iterations; sessions expire after eight hours and logout revokes them. Authentication requests are rate limited.
+Scalar documents the typed request schemas, response statuses and field formats. Sign in using `/api/auth/login`, then set Bearer authentication with the returned opaque session token. [Request examples](docs/api-reference.md) cover authentication, queries, commands and report retrieval. The former `/swagger/index.html` URL remains compatible with existing references. Tokens are not JWT: only their SHA-256 digests are persisted. Passwords use salted PBKDF2-SHA256 with 210,000 iterations; sessions expire after eight hours and logout revokes them. Authentication requests are rate limited.
 
 | Method and resource | Behavior |
 | --- | --- |
