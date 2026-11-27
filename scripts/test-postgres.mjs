@@ -29,7 +29,7 @@ const smtp=net.createServer(socket=>{
  socket.on('data',chunk=>{buffer+=chunk;let index;while((index=buffer.indexOf('\r\n'))>=0){const line=buffer.slice(0,index);buffer=buffer.slice(index+2);if(dataMode){if(line==='.') {messages.push(message);message='';dataMode=false;socket.write('250 queued\r\n');}else message+=line+'\r\n';continue;}if(/^EHLO|^HELO/.test(line))socket.write('250 loopback.test\r\n');else if(/^MAIL|^RCPT|^RSET/.test(line))socket.write('250 OK\r\n');else if(line==='DATA'){dataMode=true;socket.write('354 End with dot\r\n');}else if(line==='QUIT')socket.end('221 bye\r\n');else socket.write('250 OK\r\n');}});
 });
 await new Promise(r=>smtp.listen(0,'127.0.0.1',r));
-const apiEnvironment={...process.env,FRIOTRACK_MAIL_HOST:'127.0.0.1',FRIOTRACK_MAIL_PORT:String(smtp.address().port),FRIOTRACK_MAIL_TLS:'false',FRIOTRACK_MAIL_FROM:'noreply@friotrack.example',FRIOTRACK_RESET_URL:'http://localhost/#/reset-password',FRIOTRACK_PERSISTENCE:'postgres',FRIOTRACK_DB:dbConnection,FRIOTRACK_MIGRATE:'true',FRIOTRACK_SEED:'true',FRIOTRACK_COORDINATOR_PASSWORD:password,FRIOTRACK_CLIENT_PASSWORD:clientPassword,FRIOTRACK_ORIGINS:'http://127.0.0.1:5173'};
+const apiEnvironment={...process.env,FRIOTRACK_CONTACT_TO:'team@friotrack.example',FRIOTRACK_MAIL_HOST:'127.0.0.1',FRIOTRACK_MAIL_PORT:String(smtp.address().port),FRIOTRACK_MAIL_TLS:'false',FRIOTRACK_MAIL_FROM:'noreply@friotrack.example',FRIOTRACK_RESET_URL:'http://localhost/#/reset-password',FRIOTRACK_PERSISTENCE:'postgres',FRIOTRACK_DB:dbConnection,FRIOTRACK_MIGRATE:'true',FRIOTRACK_SEED:'true',FRIOTRACK_COORDINATOR_PASSWORD:password,FRIOTRACK_CLIENT_PASSWORD:clientPassword,FRIOTRACK_ORIGINS:'http://127.0.0.1:5173'};
 const record={scope:'Isolated real PostgreSQL API integration; not cloud deployment or team acceptance',startedAt:new Date().toISOString(),checks:[],failures:[]};
 let server,diagnostic='',created=false;
 const check=(name,run)=>{run();record.checks.push(name);console.log('PASS '+name);};
@@ -149,6 +149,28 @@ try {
  const isolatedSummary=await call('/analytics/monthly?month='+month,{token:other.data.token});check('Another organization cannot see route analytics',()=>{assert.equal(isolatedSummary.status,200);assert.equal(isolatedSummary.data.shipments,0);});
  const invalidMonth=await call('/analytics/monthly?month=2026-13',{token});check('Invalid calendar months are rejected',()=>assert.equal(invalidMonth.status,400));
  const audit=await call('/audit?month='+month,{token});check('Operational audit preserves actor, timestamp and shipment scope',()=>{assert.equal(audit.status,200);assert.ok(audit.data.some(x=>x.shipmentId===shipment.id));assert.ok(audit.data.every(x=>x.at&&x.actor&&x.shipmentId));});
+ const quarter=Math.floor((Number(month.slice(5))-1)/3)+1;const year=Number(month.slice(0,4));
+ const quarterly=await call(`/analytics/quarterly?year=${year}&quarter=${quarter}`,{token});
+ const quarterStart=new Date(Date.UTC(year,(quarter-1)*3,1)).toISOString();const quarterEnd=new Date(Date.UTC(year,quarter*3,1)).toISOString();
+ const allShipments=(await call('/shipments',{token})).data;
+ check('Quarterly analytics include exactly the authorized three-month departure interval',()=>{assert.equal(quarterly.status,200);assert.equal(quarterly.data.quarter,`${year}-Q${quarter}`);assert.equal(quarterly.data.shipments,allShipments.filter(s=>s.departure>=quarterStart&&s.departure<quarterEnd).length);});
+ const isolatedQuarter=await call(`/analytics/quarterly?year=${year}&quarter=${quarter}`,{token:other.data.token});const badQuarter=await call(`/analytics/quarterly?year=${year}&quarter=5`,{token});
+ check('Quarterly queries reject invalid periods and isolate organizations',()=>{assert.equal(isolatedQuarter.data.shipments,0);assert.equal(badQuarter.status,400);});
+ check('Audit lists a corrective action once while preserving separate readings in one batch',()=>{assert.equal(audit.data.filter(x=>x.shipmentId===shipment.id&&x.action==='correctiveAction'&&x.note==='Inspect cooling equipment').length,1);assert.equal(audit.data.filter(x=>x.shipmentId===batchId&&x.action==='sampleReading').length,2);});
+ const actorName=audit.data[0].actor;const filteredAudit=await call('/audit?'+new URLSearchParams({from:quarterStart,to:quarterEnd,actor:actorName}),{token});const unknownActor=await call('/audit?'+new URLSearchParams({month,actor:'Unknown participant'}),{token});const badAudit=await call('/audit?'+new URLSearchParams({from:quarterEnd,to:quarterStart}),{token});
+ check('Audit filters users and exclusive UTC date intervals without exposing other actors',()=>{assert.equal(filteredAudit.status,200);assert.ok(filteredAudit.data.length>0);assert.ok(filteredAudit.data.every(x=>x.actor===actorName&&x.at>=quarterStart&&x.at<quarterEnd));assert.equal(unknownActor.data.length,0);assert.equal(badAudit.status,400);});
+ const filteredShipments=await call('/shipments?'+new URLSearchParams({q:batchId,status:'in-transit',vehicleId:body.vehicleId,from:quarterStart,to:quarterEnd,active:'true'}),{token});
+ const clientFiltered=await call('/shipments?'+new URLSearchParams({q:batchId}),{token:freshToken});const invalidFilters=await call('/shipments?status=unknown',{token});
+ check('Shipment collection combines search, resource, state and date filters within access scope',()=>{assert.equal(filteredShipments.status,200);assert.deepEqual(filteredShipments.data.map(s=>s.id),[batchId]);assert.equal(clientFiltered.data.length,0);assert.equal(invalidFilters.status,400);});
+ const inactiveVehicle=(await mutate('/vehicles',{plate:'DEL-'+nonce.slice(0,3),capacity:10,enabled:true},token)).result;
+ const inactiveDriver=(await mutate('/drivers',{name:'Inactive driver',license:'DEL-'+nonce,enabled:true},token)).result;
+ const inactiveSensor=(await mutate('/sensors',{serialCode:'DEL-'+nonce,enabled:true},token)).result;
+ for(const [collection,resource] of [['vehicles',inactiveVehicle],['drivers',inactiveDriver],['sensors',inactiveSensor]]){
+   const disabled=await call('/'+collection+'/'+resource.id,{method:'DELETE',token});const again=await call('/'+collection+'/'+resource.id,{method:'DELETE',token});const retained=await call('/'+collection+'/'+resource.id,{token});
+   check('Logical DELETE of '+collection+' is idempotent and retains the resource',()=>{assert.equal(disabled.status,200);assert.equal(again.status,200);assert.equal(retained.status,200);assert.equal(retained.data.enabled,false);});
+ }
+ const reservedDelete=await call('/vehicles/'+body.vehicleId,{method:'DELETE',token});const clientDelete=await call('/drivers/'+inactiveDriver.id,{method:'DELETE',token:freshToken});const crossDelete=await call('/sensors/'+inactiveSensor.id,{method:'DELETE',token:other.data.token});
+ check('Fleet deactivation rejects reserved resources, cargo clients and cross-organization identifiers',()=>{assert.equal(reservedDelete.status,409);assert.equal(clientDelete.status,403);assert.equal(crossDelete.status,404);});
  const pdf=await fetch(base+'/api/reports/monthly/pdf?month='+month,{headers:{Authorization:'Bearer '+token}});const pdfBytes=Buffer.from(await pdf.arrayBuffer());
  check('Monthly executive report is a real PDF with a download filename',()=>{assert.equal(pdf.status,200);assert.equal(pdf.headers.get('content-type'),'application/pdf');assert.equal(pdfBytes.subarray(0,5).toString(),'%PDF-');assert.match(pdf.headers.get('content-disposition'),/friotrack-monthly/);});
  await mkdir('tmp',{recursive:true});await writeFile('tmp/monthly-report-test.private.pdf',pdfBytes);
@@ -157,6 +179,10 @@ try {
  const accounts=await call('/accounts',{token});const deniedAccounts=await call('/accounts',{token:freshToken});
  check('Account administration rejects cargo clients and hides password hashes',()=>{assert.equal(accounts.status,200);assert.equal(deniedAccounts.status,403);assert.ok(accounts.data.every(a=>a.email&&!a.passwordHash&&!a.passwordSalt));});
  const lockout=await call('/accounts/coordinator-1/access',{method:'PUT',body:{role:'cargo-client',enabled:false},token});check('A coordinator cannot remove their own access',()=>assert.equal(lockout.status,400));
+ const contactBody={name:'Local tester',company:'Example team',email:'participant@example.invalid',phone:'+51 999 000 000',role:'buyer'};
+ const contactStart=messages.length;const commercialContact=await call('/commercial-contacts',{method:'POST',body:contactBody});const invalidContact=await call('/commercial-contacts',{method:'POST',body:{...contactBody,role:'administrator'}});
+ check('Commercial contact validates fields and delivers only to the fixed loopback mailbox',()=>{assert.equal(commercialContact.status,202);assert.equal(invalidContact.status,400);assert.equal(messages.length,contactStart+1);assert.match(messages.at(-1),/team@friotrack.example/);assert.match(messages.at(-1),/Reply-To: participant@example.invalid/i);});
+ await call('/commercial-contacts',{method:'POST',body:contactBody});const limitedContact=await call('/commercial-contacts',{method:'POST',body:contactBody});check('Public commercial contact is rate limited separately from account authentication',()=>assert.equal(limitedContact.status,429));messages.length=0;
  const unknownRecovery=await call('/auth/forgot-password',{method:'POST',body:{email:'unknown@example.invalid'}});
  const recovery=await call('/auth/forgot-password',{method:'POST',body:{email:registration.data.profile.email}});
  check('Recovery returns the same response for existing and unknown accounts',()=>{assert.equal(recovery.status,202);assert.equal(unknownRecovery.status,202);assert.deepEqual(unknownRecovery.data,recovery.data);assert.equal(messages.length,1);});
@@ -174,6 +200,7 @@ try {
  const crossAccount=await call('/accounts/isolation-coordinator/access',{method:'PUT',body:{role:'cargo-client',enabled:true},token});check('Account administration cannot cross organization boundaries',()=>assert.equal(crossAccount.status,404));
  const anonSpec=await call('/swagger/v1/swagger.json');check('Scalar contract does not require a bearer token to request recovery',()=>assert.deepEqual(anonSpec.data.paths['/api/auth/forgot-password'].post.security,[]));
  apiEnvironment.FRIOTRACK_MAIL_HOST='';await stop();await start();const noMail=await call('/capabilities');const unavailableRecovery=await call('/auth/forgot-password',{method:'POST',body:{email:'coordinador@friotrack.app'}});check('Unconfigured email recovery is explicitly unavailable without claiming delivery',()=>{assert.equal(noMail.data.passwordRecovery,false);assert.equal(unavailableRecovery.status,503);assert.equal(unavailableRecovery.data.code,'recoveryUnavailable');});
+ const unavailableContact=await call('/commercial-contacts',{method:'POST',body:contactBody});check('Unconfigured commercial delivery returns unavailable without a success claim',()=>{assert.equal(unavailableContact.status,503);assert.equal(unavailableContact.data.code,'contactUnavailable');});
  record.tables=sql("SELECT string_agg(table_name,',' ORDER BY table_name) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '__EFMigrationsHistory';").split(',');
  record.status='passed';
 } catch(error){record.status='failed';record.failures.push(error.message);console.error('FAIL '+error.message);process.exitCode=1;}
