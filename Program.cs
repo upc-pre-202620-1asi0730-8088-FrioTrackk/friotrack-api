@@ -1,3 +1,9 @@
+using FrioTrack.Api.Iam.Application.CommandServices;
+using FrioTrack.Api.Iam.Application.QueryServices;
+using FrioTrack.Api.AlertsReporting.Application.QueryServices;
+using FrioTrack.Api.Iam.Application;
+using FrioTrack.Api.AlertsReporting.Application;
+using FrioTrack.Api.AlertsReporting.Infrastructure;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using FrioTrack.Api.Interfaces;
@@ -37,9 +43,19 @@ if (persistenceMode == "json") {
     builder.Services.AddDbContext<FrioTrackDbContext>(options => options.UseNpgsql(connection));
     builder.Services.AddScoped(typeof(IAggregateRepository<>), typeof(EfAggregateRepository<>));
     builder.Services.AddScoped<RelationalWorkspaceService>();
+    builder.Services.AddScoped<IAccountSecurityCommandService,AccountSecurityService>();
+    builder.Services.AddScoped<IAccountAccessCommandService,AccountAdministration>();
+    builder.Services.AddScoped<IAccountAccessQueryService,AccountAdministration>();
+    builder.Services.AddScoped<IOperationalQueryService,OperationalReporting>();
+    builder.Services.AddSingleton<FrioTrack.Api.AlertsReporting.Application.Ports.IReportDocumentRenderer,ReportPdfRenderer>();
+    builder.Services.AddControllers().AddJsonOptions(options=>options.JsonSerializerOptions.RespectRequiredConstructorParameters=true);
+    builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options=>options.InvalidModelStateResponseFactory=context=>new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new ErrorResponse("requiredFields","Check the required request fields.")));
+    builder.Services.AddScoped<IRecoveryMail,SmtpRecoveryMail>();
+    ReportPdfRenderer.ConfigureFonts();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options => {
-        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack REST API", Version="0.2.1", Description="Servicio de gestión de envíos refrigerados, flota, alertas e historial. Las lecturas y coordenadas de demostración no representan sensores físicos. Inicie sesión en /api/auth/login y utilice el token opaco recibido en la autenticación Bearer. Accept-Language: es permite consultar los mensajes en español." });
+        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack REST API", Version="0.3.0", Description="Servicio de gestión de envíos refrigerados, flota, alertas e historial. Las lecturas y coordenadas de demostración no representan sensores físicos. Inicie sesión en /api/auth/login y utilice el token opaco recibido en la autenticación Bearer. Accept-Language: es permite consultar los mensajes en español." });
+        options.OperationFilter<PublicOperationFilter>();
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type=SecuritySchemeType.Http, Scheme="bearer", BearerFormat="Opaque session token", Description="Use the token returned by login. This is not a JWT." });
         options.AddSecurityRequirement(document => new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("Bearer",document)] = [] });
     });
@@ -57,6 +73,8 @@ else {
         .DisableAgent());
     app.UseSwaggerUI(options => { options.SwaggerEndpoint("/swagger/v1/swagger.json", "FríoTrack AV2 v1"); options.DocumentTitle="FríoTrack API documentation"; });
     app.MapAv2Endpoints();
+    app.MapControllers();
+    app.MapGet("/api/capabilities",(IAccountSecurityCommandService service)=>new{passwordRecovery=service.RecoveryAvailable,monthlyPdf=true,analytics=true}).WithTags("Health");
     await DatabaseInitializer.Initialize(app);
 }
 app.Run();

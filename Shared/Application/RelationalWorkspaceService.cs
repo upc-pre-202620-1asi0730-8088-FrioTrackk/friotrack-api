@@ -129,10 +129,15 @@ public sealed class RelationalWorkspaceService(FrioTrackDbContext db, IPasswordH
             case "deleteShipment": {
                 var shipment=await FindShipment(actor,id);var hasReadings=await db.Monitorings.AnyAsync(x=>x.ShipmentId==id && x.Readings.Any());shipment.CheckDeletion((long)N(p,"version"),hasReadings);db.Shipments.Remove(shipment);result=JsonValue.Create(id);break;
             }
-            case "addReading": {
+            case "addReading": case "addReadings": {
+                var batch=type=="addReadings" ? p["readings"] as JsonArray : new JsonArray(p.DeepClone());
+                Require(batch is not null && batch.Count is >=1 and <=100,"invalidReadingBatch");
+                var accepted=0;
+                foreach(var item in batch!){
+                var input=item as JsonObject ?? throw new ApiError("requiredFields");
                 var shipment=await FindShipment(actor,id);Require(shipment.Status=="in-transit","readingsTransitOnly");
-                var monitoring=await db.Monitorings.Include(x=>x.Readings).Include(x=>x.Positions).SingleAsync(x=>x.ShipmentId==id);var at=string.IsNullOrEmpty(S(p,"at"))?now:D(p,"at");
-                var reading=monitoring.Record(N(p,"temperature"),N(p,"humidity"),N(p,"lat"),N(p,"lng"),at,now);
+                var monitoring=await db.Monitorings.Include(x=>x.Readings).Include(x=>x.Positions).SingleAsync(x=>x.ShipmentId==id);var at=string.IsNullOrEmpty(S(input,"at"))?now:D(input,"at");
+                var reading=monitoring.Record(N(input,"temperature"),N(input,"humidity"),N(input,"lat"),N(input,"lng"),at,now);
                 var active=await db.Alerts.Where(x=>x.ShipmentId==id && x.Status!="resolved").ToListAsync();
                 foreach(var (kind,value,min,max) in new[]{("temperature",reading.Temperature,monitoring.MinTemp,monitoring.MaxTemp),("humidity",reading.Humidity,monitoring.MinHumidity,monitoring.MaxHumidity)}) {
                     if(value>=min && value<=max)continue;
@@ -141,7 +146,11 @@ public sealed class RelationalWorkspaceService(FrioTrackDbContext db, IPasswordH
                     alert.Observe(value,reading.At,monitoring.ToleranceMinutes);
                 }
                 foreach(var alert in active){alert.TryResolveThermal(new RecoveryEvidence(reading.Id,reading.At,reading.WithinRange));alert.TryRestoreSignal(reading.At,now,monitoring.MaxSilenceMinutes);}
-                shipment.Audit(actor.Id,"sampleReading","Demonstration reading recorded",now);result=Object(new{reading.Id,reading.At,reading.Temperature,reading.Humidity,lat=N(p,"lat"),lng=N(p,"lng")});break;
+                shipment.Audit(actor.Id,"sampleReading","Demonstration reading recorded",now);result=Object(new{reading.Id,reading.At,reading.Temperature,reading.Humidity,lat=N(input,"lat"),lng=N(input,"lng")});
+                await db.SaveChangesAsync();accepted++;
+                }
+                if(type=="addReadings")result=Object(new{accepted});
+                break;
             }
             case "checkSignal": {
                 var shipment=await FindShipment(actor,id);var monitoring=await db.Monitorings.SingleOrDefaultAsync(x=>x.ShipmentId==id) ?? throw new ApiError("notFound",404);monitoring.EvaluateSignal(now);

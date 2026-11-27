@@ -1,6 +1,6 @@
 # FríoTrack API
 
-Canonical Web Services source for FríoTrack AV2. ASP.NET Core 10, Entity Framework Core and PostgreSQL implement the refrigerated shipment workflow. The API defaults to relational persistence; the historical TB1 JSON adapter remains available only through an explicit configuration choice.
+Canonical Web Services source for FríoTrack. ASP.NET Core 10, Entity Framework Core and PostgreSQL implement the refrigerated shipment workflow. The API defaults to relational persistence; the historical TB1 JSON adapter remains available only through an explicit configuration choice.
 
 `seed.json` contains fictional demonstration accounts, shipments, readings and coordinates. Manually recorded readings retain demonstration provenance; this release does not claim physical sensor ingestion, email delivery or verified cold-chain conditions.
 
@@ -10,7 +10,11 @@ The AV2 API was published on 14 November 2026 to the existing Azure App Service,
 
 The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Only isolated demonstration account credentials are included in the report annex for academic review. Infrastructure credentials and private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
 
-The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. Email password recovery and the monthly PDF report are outside the scope of this version.
+The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. The 0.2.x deployment did not include email password recovery or monthly PDF reports. [Sprint 4 / version 0.3.0](docs/tb2-release.md) adds the reporting and account-access features, with real email delivery dependent on private SMTP configuration.
+
+## Sprint 4 — TB2
+
+Version 0.3.0 adds operational analytics, monthly and traceability PDF downloads, atomic reading batches, same-organization account administration and single-use password recovery. The new bounded-context controllers use separate command/query contracts. See [the REST resources, email variables and scope](docs/tb2-release.md). This increment reuses the existing 18-table schema and requires no new database migration.
 
 ## Run locally
 
