@@ -25,6 +25,8 @@ public sealed class UserAccount {
         Name = Rules.Text(name, 90, "invalidProfile"); CompanyName = Rules.Text(companyName, 100, "invalidProfile"); Email = Rules.Text(email, 140, "invalidProfile").ToLowerInvariant(); Rules.Require(Regex.IsMatch(Email, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"), "invalidProfile");
         if (language is not null) { Rules.Require(language is "en" or "es", "invalidLanguage"); Language = language; }
     }
+    public void ChangePassword(string hash, string salt) { PasswordHash=Rules.Text(hash,256,"invalidPassword"); PasswordSalt=Rules.Text(salt,256,"invalidPassword"); }
+    public void SetAccess(string role, bool enabled) { Rules.Require(role is "coordinator" or "cargo-client","forbidden"); Role=role; Enabled=enabled; }
 }
 public sealed class AuthSession {
     public string TokenHash { get; set; } = "";

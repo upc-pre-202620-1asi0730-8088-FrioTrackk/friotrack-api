@@ -22,12 +22,20 @@ const base='http://127.0.0.1:'+port;
 const password='Temporary!'+randomBytes(20).toString('base64url');
 const clientPassword='Temporary!'+randomBytes(20).toString('base64url');
 const dbConnection=connection.replace(/(?:Database|Initial Catalog)=[^;]*;?/i,'').replace(/;?$/,';')+'Database='+database;
-const apiEnvironment={...process.env,FRIOTRACK_PERSISTENCE:'postgres',FRIOTRACK_DB:dbConnection,FRIOTRACK_MIGRATE:'true',FRIOTRACK_SEED:'true',FRIOTRACK_COORDINATOR_PASSWORD:password,FRIOTRACK_CLIENT_PASSWORD:clientPassword,FRIOTRACK_ORIGINS:'http://127.0.0.1:5173'};
+const messages=[];
+const smtp=net.createServer(socket=>{
+ socket.on('error',()=>{});
+ socket.setEncoding('utf8');socket.write('220 loopback.test ESMTP\r\n');let buffer='',dataMode=false,message='';
+ socket.on('data',chunk=>{buffer+=chunk;let index;while((index=buffer.indexOf('\r\n'))>=0){const line=buffer.slice(0,index);buffer=buffer.slice(index+2);if(dataMode){if(line==='.') {messages.push(message);message='';dataMode=false;socket.write('250 queued\r\n');}else message+=line+'\r\n';continue;}if(/^EHLO|^HELO/.test(line))socket.write('250 loopback.test\r\n');else if(/^MAIL|^RCPT|^RSET/.test(line))socket.write('250 OK\r\n');else if(line==='DATA'){dataMode=true;socket.write('354 End with dot\r\n');}else if(line==='QUIT')socket.end('221 bye\r\n');else socket.write('250 OK\r\n');}});
+});
+await new Promise(r=>smtp.listen(0,'127.0.0.1',r));
+const apiEnvironment={...process.env,FRIOTRACK_MAIL_HOST:'127.0.0.1',FRIOTRACK_MAIL_PORT:String(smtp.address().port),FRIOTRACK_MAIL_TLS:'false',FRIOTRACK_MAIL_FROM:'noreply@friotrack.example',FRIOTRACK_RESET_URL:'http://localhost/#/reset-password',FRIOTRACK_PERSISTENCE:'postgres',FRIOTRACK_DB:dbConnection,FRIOTRACK_MIGRATE:'true',FRIOTRACK_SEED:'true',FRIOTRACK_COORDINATOR_PASSWORD:password,FRIOTRACK_CLIENT_PASSWORD:clientPassword,FRIOTRACK_ORIGINS:'http://127.0.0.1:5173'};
 const record={scope:'Isolated real PostgreSQL API integration; not cloud deployment or team acceptance',startedAt:new Date().toISOString(),checks:[],failures:[]};
 let server,diagnostic='',created=false;
 const check=(name,run)=>{run();record.checks.push(name);console.log('PASS '+name);};
 async function start(){
-  diagnostic='';server=spawn(process.env.DOTNET_EXE||'dotnet',[path.resolve('output/api-publish/FrioTrack.Api.dll'),'--urls',base],{cwd:path.resolve('output/api-publish'),env:apiEnvironment,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  const published=process.env.FRIOTRACK_TEST_PUBLISH_DIR||'output/api-publish';
+  diagnostic='';server=spawn(process.env.DOTNET_EXE||'dotnet',[path.resolve(published,'FrioTrack.Api.dll'),'--urls',base],{cwd:path.resolve(published),env:apiEnvironment,windowsHide:true,stdio:['ignore','pipe','pipe']});
   server.stdout.on('data',d=>diagnostic+=d);server.stderr.on('data',d=>diagnostic+=d);
   for(let i=0;i<120;i++){
     try{const r=await fetch(base+'/api/health',{signal:AbortSignal.timeout(1500)});if(r.ok)return;}catch{}
@@ -129,10 +137,48 @@ try {
  await stop();await start();
  const restored=await call('/workspace',{token});check('Data and sessions survive an API process restart',()=>{assert.equal(restored.status,200);assert.ok(restored.data.state.shipments.some(x=>x.id===shipment.id&&x.status==='delivered'));});
  const logout=await call('/auth/logout',{method:'POST',body:{},token:clientToken});const revoked=await call('/workspace',{token:clientToken});check('Logout persists bearer session revocation',()=>{assert.equal(logout.status,204);assert.equal(revoked.status,401);});
+ const batchBooking=await mutate('/shipments',body,token);const batchId=batchBooking.result.id;await mutate('/shipments/'+batchId+'/transitions',{version:batchBooking.result.version,status:'in-transit'},token);
+ const at=new Date().toISOString();const first={temperature:4,humidity:80,lat:-12,lng:-77,at};const badBatch=await call('/shipments/'+batchId+'/readings/batch',{method:'POST',body:{readings:[first,{...first,at:new Date(Date.parse(at)+1).toISOString(),lat:100}]},token});
+ check('An invalid reading batch rolls back earlier readings and audit events',()=>{assert.equal(badBatch.status,400);assert.equal(sql(`SELECT count(*) FROM sensor_readings r JOIN shipment_monitorings m ON r.monitoring_id=m.id WHERE m.shipment_id='${batchId}';`),'0');});
+ const acceptedBatch=await call('/shipments/'+batchId+'/readings/batch',{method:'POST',body:{readings:[first,{...first,at:new Date(Date.parse(at)+1).toISOString()}]},token});check('A valid ordered batch stores all readings atomically',()=>{assert.equal(acceptedBatch.status,200);assert.equal(acceptedBatch.data.result.accepted,2);});
+ const forbiddenBatch=await call('/shipments/'+batchId+'/readings/batch',{method:'POST',body:{readings:[first]},token:freshToken});check('Cargo clients cannot submit telemetry batches',()=>assert.equal(forbiddenBatch.status,403));
+ const month=new Date().toISOString().slice(0,7);
+ const summary=await call('/analytics/monthly?month='+month,{token});
+ const clientSummary=await call('/analytics/monthly?month='+month,{token:(await call('/auth/login',{method:'POST',body:{email:'cliente@friotrack.app',password:clientPassword}})).data.token});
+ check('Monthly analytics aggregate the authorized departure month without invented readings',()=>{assert.equal(summary.status,200);assert.ok(summary.data.shipments>=1);assert.ok(summary.data.routes.every(r=>r.readings>0||r.averageTemperature===null));assert.ok(clientSummary.data.shipments<=summary.data.shipments);});
+ const isolatedSummary=await call('/analytics/monthly?month='+month,{token:other.data.token});check('Another organization cannot see route analytics',()=>{assert.equal(isolatedSummary.status,200);assert.equal(isolatedSummary.data.shipments,0);});
+ const invalidMonth=await call('/analytics/monthly?month=2026-13',{token});check('Invalid calendar months are rejected',()=>assert.equal(invalidMonth.status,400));
+ const audit=await call('/audit?month='+month,{token});check('Operational audit preserves actor, timestamp and shipment scope',()=>{assert.equal(audit.status,200);assert.ok(audit.data.some(x=>x.shipmentId===shipment.id));assert.ok(audit.data.every(x=>x.at&&x.actor&&x.shipmentId));});
+ const pdf=await fetch(base+'/api/reports/monthly/pdf?month='+month,{headers:{Authorization:'Bearer '+token}});const pdfBytes=Buffer.from(await pdf.arrayBuffer());
+ check('Monthly executive report is a real PDF with a download filename',()=>{assert.equal(pdf.status,200);assert.equal(pdf.headers.get('content-type'),'application/pdf');assert.equal(pdfBytes.subarray(0,5).toString(),'%PDF-');assert.match(pdf.headers.get('content-disposition'),/friotrack-monthly/);});
+ await mkdir('tmp',{recursive:true});await writeFile('tmp/monthly-report-test.private.pdf',pdfBytes);
+ const thermal=await fetch(base+'/api/reports/'+reportId+'/pdf',{headers:{Authorization:'Bearer '+token}});const thermalBytes=Buffer.from(await thermal.arrayBuffer());
+ check('The persisted traceability snapshot can be downloaded as PDF',()=>{assert.equal(thermal.status,200);assert.equal(thermalBytes.subarray(0,5).toString(),'%PDF-');});
+ const accounts=await call('/accounts',{token});const deniedAccounts=await call('/accounts',{token:freshToken});
+ check('Account administration rejects cargo clients and hides password hashes',()=>{assert.equal(accounts.status,200);assert.equal(deniedAccounts.status,403);assert.ok(accounts.data.every(a=>a.email&&!a.passwordHash&&!a.passwordSalt));});
+ const lockout=await call('/accounts/coordinator-1/access',{method:'PUT',body:{role:'cargo-client',enabled:false},token});check('A coordinator cannot remove their own access',()=>assert.equal(lockout.status,400));
+ const unknownRecovery=await call('/auth/forgot-password',{method:'POST',body:{email:'unknown@example.invalid'}});
+ const recovery=await call('/auth/forgot-password',{method:'POST',body:{email:registration.data.profile.email}});
+ check('Recovery returns the same response for existing and unknown accounts',()=>{assert.equal(recovery.status,202);assert.equal(unknownRecovery.status,202);assert.deepEqual(unknownRecovery.data,recovery.data);assert.equal(messages.length,1);});
+ const mail=messages[0];const bodyText=mail.split('\r\n\r\n').slice(1).join('\r\n\r\n');const decoded=/Content-Transfer-Encoding: base64/i.test(mail)?Buffer.from(bodyText.replace(/\s/g,''),'base64').toString('utf8'):bodyText.replace(/=\r\n/g,'').replace(/=3D/gi,'=');
+ const resetToken=decoded.match(/token=([A-F0-9]{64})/)[1];
+ check('Recovery tokens are delivered through loopback SMTP and stored only as hashes',()=>assert.notEqual(sql('SELECT token_hash FROM password_reset_tokens LIMIT 1;'),resetToken));
+ const resetPassword='Replacement!'+randomBytes(18).toString('hex');const reset=await call('/auth/reset-password',{method:'POST',body:{token:resetToken,password:resetPassword}});const repeated=await call('/auth/reset-password',{method:'POST',body:{token:resetToken,password:resetPassword}});
+ const priorSession=await call('/workspace',{token:freshToken});
+ check('A recovery token is single-use and revokes previous sessions',()=>{assert.equal(reset.status,204);assert.equal(repeated.status,400);assert.equal(priorSession.status,401);});
+ const changed=await call('/auth/login',{method:'POST',body:{email:registration.data.profile.email,password:resetPassword}});const oldPassword=await call('/auth/login',{method:'POST',body:{email:registration.data.profile.email,password}});check('After recovery only the new password can start a session',()=>{assert.equal(changed.status,200);assert.equal(oldPassword.status,401);});
+ const expiredToken=randomBytes(32).toString('hex').toUpperCase();const {createHash}=await import('node:crypto');const expiredDigest=createHash('sha256').update(expiredToken).digest('hex').toUpperCase();sql(`INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES ('expired-recovery','${registration.data.profile.id}','${expiredDigest}',now()-interval '1 minute');`);
+ const expiredReset=await call('/auth/reset-password',{method:'POST',body:{token:expiredToken,password:resetPassword}});check('Expired recovery tokens cannot change a password',()=>{assert.equal(expiredReset.status,400);assert.equal(expiredReset.data.code,'invalidResetToken');});
+ const disabled=await call('/accounts/'+registration.data.profile.id+'/access',{method:'PUT',body:{role:'cargo-client',enabled:false},token});const disabledAccess=await call('/workspace',{token:changed.data.token});check('Disabling an organization account immediately revokes its sessions',()=>{assert.equal(disabled.status,204);assert.equal(disabledAccess.status,401);});
+ const invalidRole=await call('/accounts/'+registration.data.profile.id+'/access',{method:'PUT',body:{role:'administrator',enabled:true},token});check('Unknown privileged roles are rejected',()=>assert.equal(invalidRole.status,403));
+ const crossAccount=await call('/accounts/isolation-coordinator/access',{method:'PUT',body:{role:'cargo-client',enabled:true},token});check('Account administration cannot cross organization boundaries',()=>assert.equal(crossAccount.status,404));
+ const anonSpec=await call('/swagger/v1/swagger.json');check('Scalar contract does not require a bearer token to request recovery',()=>assert.deepEqual(anonSpec.data.paths['/api/auth/forgot-password'].post.security,[]));
+ apiEnvironment.FRIOTRACK_MAIL_HOST='';await stop();await start();const noMail=await call('/capabilities');const unavailableRecovery=await call('/auth/forgot-password',{method:'POST',body:{email:'coordinador@friotrack.app'}});check('Unconfigured email recovery is explicitly unavailable without claiming delivery',()=>{assert.equal(noMail.data.passwordRecovery,false);assert.equal(unavailableRecovery.status,503);assert.equal(unavailableRecovery.data.code,'recoveryUnavailable');});
  record.tables=sql("SELECT string_agg(table_name,',' ORDER BY table_name) FROM information_schema.tables WHERE table_schema='public' AND table_name <> '__EFMigrationsHistory';").split(',');
  record.status='passed';
 } catch(error){record.status='failed';record.failures.push(error.message);console.error('FAIL '+error.message);process.exitCode=1;}
 finally{
+ await new Promise(r=>smtp.close(r));
  await stop();await mkdir('tmp',{recursive:true});
  // Keep startup diagnostics outside source control; never serialize environment secrets.
  await writeFile('tmp/postgres-server.private.log',diagnostic);
