@@ -29,6 +29,7 @@ var origins = (builder.Configuration["FRIOTRACK_ORIGINS"] ?? "http://localhost:5
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddRateLimiter(o => {
     o.RejectionStatusCode = 429;
+    o.AddPolicy("contact", context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString()??"unknown",_=>new FixedWindowRateLimiterOptions{PermitLimit=3,Window=TimeSpan.FromMinutes(1),QueueLimit=0}));
     o.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 15, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
@@ -47,14 +48,16 @@ if (persistenceMode == "json") {
     builder.Services.AddScoped<IAccountAccessCommandService,AccountAdministration>();
     builder.Services.AddScoped<IAccountAccessQueryService,AccountAdministration>();
     builder.Services.AddScoped<IOperationalQueryService,OperationalReporting>();
+    builder.Services.AddScoped<FrioTrack.Api.ShipmentManagement.Application.QueryServices.IShipmentQueryService,FrioTrack.Api.ShipmentManagement.Application.ShipmentQueries>();
     builder.Services.AddSingleton<FrioTrack.Api.AlertsReporting.Application.Ports.IReportDocumentRenderer,ReportPdfRenderer>();
     builder.Services.AddControllers().AddJsonOptions(options=>options.JsonSerializerOptions.RespectRequiredConstructorParameters=true);
     builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options=>options.InvalidModelStateResponseFactory=context=>new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new ErrorResponse("requiredFields","Check the required request fields.")));
     builder.Services.AddScoped<IRecoveryMail,SmtpRecoveryMail>();
+    builder.Services.AddScoped<FrioTrack.Api.CommercialContact.Application.Ports.ICommercialContactMail,FrioTrack.Api.CommercialContact.Infrastructure.SmtpCommercialContactMail>();
     ReportPdfRenderer.ConfigureFonts();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options => {
-        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack REST API", Version="0.3.0", Description="Servicio de gestión de envíos refrigerados, flota, alertas e historial. Las lecturas y coordenadas de demostración no representan sensores físicos. Inicie sesión en /api/auth/login y utilice el token opaco recibido en la autenticación Bearer. Accept-Language: es permite consultar los mensajes en español." });
+        options.SwaggerDoc("v1", new OpenApiInfo { Title="FríoTrack REST API", Version="0.4.0", Description="Servicio de gestión de envíos refrigerados, flota, alertas e historial. Las lecturas y coordenadas de demostración no representan sensores físicos. Inicie sesión en /api/auth/login y utilice el token opaco recibido en la autenticación Bearer. Accept-Language: es permite consultar los mensajes en español." });
         options.OperationFilter<PublicOperationFilter>();
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type=SecuritySchemeType.Http, Scheme="bearer", BearerFormat="Opaque session token", Description="Use the token returned by login. This is not a JWT." });
         options.AddSecurityRequirement(document => new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("Bearer",document)] = [] });
@@ -74,7 +77,7 @@ else {
     app.UseSwaggerUI(options => { options.SwaggerEndpoint("/swagger/v1/swagger.json", "FríoTrack AV2 v1"); options.DocumentTitle="FríoTrack API documentation"; });
     app.MapAv2Endpoints();
     app.MapControllers();
-    app.MapGet("/api/capabilities",(IAccountSecurityCommandService service)=>new{passwordRecovery=service.RecoveryAvailable,monthlyPdf=true,analytics=true}).WithTags("Health");
+    app.MapGet("/api/capabilities",(IAccountSecurityCommandService service,FrioTrack.Api.CommercialContact.Application.Ports.ICommercialContactMail contact)=>new{passwordRecovery=service.RecoveryAvailable,commercialContact=contact.IsConfigured,monthlyPdf=true,analytics=true,quarterlyAnalytics=true}).WithTags("Health");
     await DatabaseInitializer.Initialize(app);
 }
 app.Run();

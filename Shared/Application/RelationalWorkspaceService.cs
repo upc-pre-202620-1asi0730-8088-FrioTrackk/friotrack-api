@@ -163,6 +163,21 @@ public sealed class RelationalWorkspaceService(FrioTrackDbContext db, IPasswordH
                 var alert=await db.Alerts.Include(x=>x.Actions).SingleOrDefaultAsync(x=>x.Id==id) ?? throw new ApiError("notFound",404);var shipment=await FindShipment(actor,alert.ShipmentId);
                 alert.Acknowledge(actor.Id,S(p,"note"),B(p,"notifyClient"),now);shipment.Audit(actor.Id,"correctiveAction",S(p,"note"),now);if(B(p,"notifyClient"))await Notify(shipment,"correctiveAction",now,true);result=Object(new{alert.Id});break;
             }
+            case "disableVehicle": {
+                var resource=await db.Vehicles.SingleOrDefaultAsync(x=>x.Id==id&&x.OrganizationId==actor.OrganizationId)??throw new ApiError("notFound",404);
+                Require(!await db.Allocations.AnyAsync(x=>x.VehicleId==id&&x.Status=="reserved"),"assignedResource",409);
+                resource.Update(resource.Plate,resource.Capacity,false);result=Object(new{resource.Id});break;
+            }
+            case "disableDriver": {
+                var resource=await db.Drivers.SingleOrDefaultAsync(x=>x.Id==id&&x.OrganizationId==actor.OrganizationId)??throw new ApiError("notFound",404);
+                Require(!await db.Allocations.AnyAsync(x=>x.DriverId==id&&x.Status=="reserved"),"assignedResource",409);
+                resource.Update(resource.Name,resource.License,false);result=Object(new{resource.Id});break;
+            }
+            case "disableSensor": {
+                var resource=await db.Sensors.SingleOrDefaultAsync(x=>x.Id==id&&x.OrganizationId==actor.OrganizationId)??throw new ApiError("notFound",404);
+                Require(resource.VehicleId is null||!await db.Allocations.AnyAsync(x=>x.VehicleId==resource.VehicleId&&x.Status=="reserved"),"assignedResource",409);
+                resource.Update(resource.SerialCode,resource.VehicleId,false);result=Object(new{resource.Id});break;
+            }
             case "saveVehicle": {
                 var vehicle=id.Length==0?null:await db.Vehicles.SingleOrDefaultAsync(x=>x.Id==id && x.OrganizationId==actor.OrganizationId);Require(id.Length==0 || vehicle is not null,"notFound",404);if(vehicle is not null)Require(!await db.Allocations.AnyAsync(x=>x.VehicleId==id && x.Status=="reserved"),"assignedResource",409);
                 var plate=S(p,"plate").Trim().ToUpperInvariant();Require(!await db.Vehicles.AnyAsync(x=>x.Id!=id && x.Plate==plate),"duplicateVehicle",409);
@@ -200,7 +215,7 @@ public sealed class RelationalWorkspaceService(FrioTrackDbContext db, IPasswordH
         await db.SaveChangesAsync();await transaction.CommitAsync();
         var stateAfter=await State(actor);
         if(result is JsonObject resultObject && resultObject["id"] is not null) {
-            var resultId=S(resultObject,"id");string? collection=type switch {"createShipment" or "updateShipment" or "transition" or "recordIncident"=>"shipments","saveVehicle"=>"vehicles","saveDriver"=>"drivers","saveSensor"=>"sensors","recordCorrectiveAction" or "resolveAlert"=>"alerts",_=>null};
+            var resultId=S(resultObject,"id");string? collection=type switch {"createShipment" or "updateShipment" or "transition" or "recordIncident"=>"shipments","saveVehicle" or "disableVehicle"=>"vehicles","saveDriver" or "disableDriver"=>"drivers","saveSensor" or "disableSensor"=>"sensors","recordCorrectiveAction" or "resolveAlert"=>"alerts",_=>null};
             if(collection is not null) result=stateAfter[collection]!.AsArray().FirstOrDefault(x=>S(x,"id")==resultId)?.DeepClone() ?? result;
         }
         return new JsonObject{["profile"]=Profile(actor),["state"]=stateAfter,["result"]=result};

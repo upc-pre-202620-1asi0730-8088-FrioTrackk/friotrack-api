@@ -1,6 +1,6 @@
-# FríoTrack Web Services 0.3.0 — Sprint 4
+# FríoTrack Web Services 0.4.0 — Sprint 4
 
-El incremento incorpora consultas mensuales, bitácora operativa, informes PDF, lecturas por lote y administración de acceso dentro de cada empresa. La recuperación de contraseña utiliza el modelo relacional existente; requiere configurar un servidor SMTP para enviar mensajes fuera del entorno de pruebas.
+El incremento incorpora consultas mensuales y trimestrales, bitácora operativa, informes PDF, lecturas por lote y administración de acceso dentro de cada empresa. La recuperación de contraseña utiliza el modelo relacional existente; requiere configurar un servidor SMTP para enviar mensajes fuera del entorno de pruebas.
 
 ## Arquitectura
 
@@ -11,7 +11,11 @@ La persistencia mantiene EF Core/PostgreSQL y las 18 tablas existentes. `DbConte
 | Recurso | Comportamiento |
 | --- | --- |
 | `GET /api/analytics/monthly?month=2026-10` | Resumen y comparación de rutas de los envíos autorizados con salida en ese mes UTC. Los valores sin lecturas son nulos. |
-| `GET /api/audit?month=2026-10` | Historial de envíos y acciones correctivas con fecha y responsable; filtrado por el mes UTC del evento. |
+| `GET /api/audit?month=2026-10` | Historial y acciones sin duplicar eventos, por mes UTC. Admite `actor` y el intervalo `[from,to)` de hasta 366 días. |
+| `GET /api/analytics/quarterly?year=2026&quarter=4` | Agrega todas las lecturas de los tres meses; evita promediar promedios redondeados. |
+| `GET /api/shipments?q=palta&status=in-transit&active=true` | Combina búsqueda, estado, `vehicleId` y fechas de salida `[from,to)` sobre la proyección autorizada. |
+| `DELETE /api/{vehicles,drivers,sensors}/{id}` | Baja lógica idempotente. Conserva el registro y rechaza recursos con reservas activas. |
+| `POST /api/commercial-contacts` | Valida la solicitud de la landing y envía al buzón fijo configurado. Límite: 3 solicitudes/minuto/IP. Devuelve 503 sin proveedor. |
 | `GET /api/reports/monthly/pdf?month=2026-10` | PDF ejecutivo del mismo conjunto autorizado. |
 | `GET /api/reports/{id}/pdf` | PDF de una copia de trazabilidad persistida, con los permisos del envío de origen. |
 | `POST /api/shipments/{id}/readings/batch` | Entre 1 y 100 lecturas ordenadas. Un registro inválido revierte el lote entero, incluidas las alertas y el historial. |
@@ -32,6 +36,7 @@ Los informes estadísticos describen lecturas de demostración y no acreditan cu
 | `FRIOTRACK_MAIL_USERNAME` / `FRIOTRACK_MAIL_PASSWORD` | Credenciales privadas del proveedor. |
 | `FRIOTRACK_MAIL_FROM` | Remitente autorizado por el proveedor. |
 | `FRIOTRACK_MAIL_TLS` | TLS habilitado por defecto; solo puede desactivarse para pruebas en loopback. |
+| `FRIOTRACK_CONTACT_TO` | Buzón fijo que recibe las solicitudes comerciales. Vacío mantiene el receptor no disponible. |
 | `FRIOTRACK_RESET_URL` | URL HTTPS de la pantalla de recuperación de la SPA, sin token; el servicio añade el token del mensaje. |
 
 La configuración real se administra en Azure App Service o en variables privadas. No se introduce en el frontend. La suite usa un servidor SMTP local y no envía correos a participantes ni a direcciones externas.
@@ -58,3 +63,5 @@ El envío debe estar en tránsito y las fechas deben ser posteriores al inicio y
 ```
 
 La referencia completa de recursos y esquemas se publica en `/scalar/v1`. Los endpoints públicos de acceso no requieren Bearer en el contrato OpenAPI. Para las demás operaciones, se utiliza el token de una sesión autorizada.
+
+Para conectar el formulario comercial una vez configurado el proveedor, se establece `contactEndpoint` en `assets/js/config.js` de la landing a `https://friotrack-api-bce6db1b.azurewebsites.net/api/commercial-contacts`. Hasta entonces se conserva el aviso de demostración y no se afirma que una solicitud se haya entregado. El endpoint acepta los campos existentes `name`, `company`, `email`, `phone` y `role` (`carrier`, `producer`, `buyer`, `other`).

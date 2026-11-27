@@ -10,11 +10,11 @@ The AV2 API was published on 14 November 2026 to the existing Azure App Service,
 
 The reviewed migration retained the historical records and three existing credential pairs. An account that originally had no credentials remains disabled; expired legacy sessions were not imported. Demonstration accounts and shipments use a separate organization. Only isolated demonstration account credentials are included in the report annex for academic review. Infrastructure credentials and private backups are excluded from public repositories. Automatic schema migration and seeding are disabled on the published service.
 
-The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. The 0.2.x deployment did not include email password recovery or monthly PDF reports. [Sprint 4 / version 0.3.0](docs/tb2-release.md) adds the reporting and account-access features, with real email delivery dependent on private SMTP configuration.
+The [public browser verification](docs/public-interview-verification.json) records 14 technical checks of the deployed demonstration workflows. The 0.2.x deployment did not include email password recovery or monthly PDF reports. [Sprint 4 / version 0.4.0](docs/tb2-release.md) adds the reporting and account-access features, with real email delivery dependent on private SMTP configuration.
 
 ## Sprint 4 — TB2
 
-Version 0.3.0 adds operational analytics, monthly and traceability PDF downloads, atomic reading batches, same-organization account administration and single-use password recovery. The new bounded-context controllers use separate command/query contracts. See [the REST resources, email variables and scope](docs/tb2-release.md). This increment reuses the existing 18-table schema and requires no new database migration.
+Version 0.4.0 adds operational analytics, monthly and traceability PDF downloads, atomic reading batches, same-organization account administration and single-use password recovery. The new bounded-context controllers use separate command/query contracts. See [the REST resources, email variables and scope](docs/tb2-release.md). This increment reuses the existing 18-table schema and requires no new database migration.
 
 ## Run locally
 
@@ -115,3 +115,5 @@ Domain tests cover invalid intervals, reservation preconditions, lifecycle/versi
 ## Migration and deployment boundary
 
 The historical JSON store is not automatically imported or overwritten by application startup. The 14 November 2026 deployment used a reviewed transactional import and retained a private backup before switching to PostgreSQL. The published service uses PostgreSQL with automatic migrations and seeding disabled. Its source revision, package hash and Kudu deployment are recorded in the [deployment receipt](docs/redeployment-api.json). See [contribution workflow](CONTRIBUTING.md) for branches and release conventions.
+
+El Sprint 4 incluye consultas trimestrales, filtros REST, bitácora por periodo y usuario, baja lógica de recursos y receptor comercial SMTP configurable. Los contratos y las condiciones de activación del correo se describen en [la documentación del incremento](docs/tb2-release.md).
